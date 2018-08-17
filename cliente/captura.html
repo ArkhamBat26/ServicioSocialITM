@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Live Capture</title>
+</head>
+
+<!-- jQuery -->
+<script
+  src="https://code.jquery.com/jquery-3.3.1.min.js"
+  integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
+  crossorigin="anonymous"></script>
+
+<!-- MaterializeCSS -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0-rc.2/css/materialize.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0-rc.2/js/materialize.min.js"></script>
+
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+<!-- Scripts Locales -->
+<script>
+var video;						// Variable global del video de la webcam
+var loopCapture = null;			// Intervalo para crear las capturas
+var capturas = 0;				// Contador de capturas realizadas
+const limite = 5; 				// Limite de capturas 
+const timeOut = 50;				// Tiempo en ms entre cada captura
+var streaming = false;			// Booleano para indicar cuando esta disponible el video
+var formData = new FormData(); 	// Objeto de datos del formulario
+
+var step = 0;					// Para controlar el icono del boton
+var action = 0; 				// Para controlar las acciones de los botones de Agree y Cancel
+
+// Cuando esta cargado todo el documento se inicia el stream.
+$(document).ready(function(){	
+	iniciarStream();
+
+	// Inicializar el modal de confirmacion y los eventos de los botones
+	$("#confirmacion").modal({
+		onCloseEnd:() => {
+			$("#loadingGIF").fadeOut(100);
+		}
+	});
+	$("#modalLabel").modal({
+		onCloseEnd:() => {
+			$("#loadingGIF").fadeOut(100);
+		}
+	});
+	$(".btnAgree").click(accionAgree);
+	$(".btnCancel").click(accionCancel);
+	$('#formLabel').submit(false);
+});
+
+
+function iniciarStream(){
+	// Asignar el objeto DOM a la variable
+	video = document.getElementById('video');
+
+	// Si tiene camara y se tiene acceso
+	if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+		// Acceder a la camara
+ 		navigator.mediaDevices.getUserMedia({ video: true }).then(function(stream) {
+			video.srcObject = stream;						// HTMLMedialement.srcObject 
+		 	video.play();									// Comenzar la reproduccion
+		 	loopCapture = setInterval(captura,timeOut);		// Establecer el intervalo para capturar
+		});
+	}
+	//Si no se soporta la webcam se alerta al respecto
+	else{
+		alert("Webcam not supported");
+	}
+
+	// Cuando la camara comience a dar señal se activa el booleano
+	video.oncanplay = function(){
+		streaming = true;
+	}
+}
+
+// 1 = NO MATCH ; 2 = PREDICT
+
+// Funcion que se ejecuta cuando se clickea en el boton "Agree" del modal de confirmacion
+function accionAgree(){
+	if(action == 1){
+		$("#formLabel").parent().children("h3").html("Nuevo");
+		$("#formLabel").parent().children("p").html("Ingresa el número de control del nuevo registro");
+		action = 4;
+		$("#formLabel").children("input[name='nuevoLabel']").val("");
+		$("#modalLabel").modal("open");
+	}
+	else if (action == 2){
+		newData = new FormData();
+		newData.append('id',sessionStorage.getItem("id"));
+		newData.append('label',sessionStorage.getItem("label"));
+		newData.append('csrfmiddlewaretoken',$("#form").children("input[name='csrfmiddlewaretoken']").val());
+		$.ajax({
+			url:window.location.href+"agregar",	// A la direccion que estamos conectados + /upload
+			type:"POST",						// Formulario tipo POST, si se pone GET en Django no se va a recibir
+			data:newData,					// Datos que se van a enviar
+			processData: false,  // tell jQuery not to process the data
+	 		contentType: false,   // tell jQuery not to set contentType
+	 		success:(data) => {
+	 			console.log(data);
+	 			M.toast({html:"Base de conocimientos actualizada",displayLength:2000});
+	 			$("#modalLabel").modal("close");
+
+				$("#loadingGIF").fadeOut(100);
+	 		}
+		});
+	}
+	else if(action == 3){
+		action = 1;
+		accionCancel();
+	}
+	else if(action == 4){
+		action = 2;
+		label = $("#formLabel").find("input[name='nuevoLabel']").val();
+		console.log(label);
+		if(label == undefined || label == ""){
+			action = 1;
+			accionAgree();
+		}
+		else{
+			localStorage.setItem("label",label);
+			action = 2;
+			accionAgree();
+		}
+	}
+}
+
+// Funcion que se ejecuta cuando se clickea en el boton "Cancel" del modal de confirmacion
+function accionCancel(){
+	console.log("CANCEL");
+	cancelData = new FormData();
+	cancelData.append('id',sessionStorage.getItem("id"));
+	cancelData.append('csrfmiddlewaretoken',$("#form").children("input[name='csrfmiddlewaretoken']").val());
+	if(action == 1){
+		$.ajax({
+			url:window.location.href+"borrar",	// A la direccion que estamos conectados + /upload
+			type:"POST",						// Formulario tipo POST, si se pone GET en Django no se va a recibir
+			data:cancelData,					// Datos que se van a enviar
+			processData: false,  // tell jQuery not to process the data
+	 		contentType: false,   // tell jQuery not to set contentType
+	 		success:(data) => {
+	 			console.log(data);
+	 			M.toast({html:"Capturas eliminadas",displayLength:2000});
+	 			$("#modalLabel").modal("close");
+
+				$("#loadingGIF").fadeOut(100);
+	 		}
+		});
+	}
+	else if (action == 2){
+		$("#formLabel").parent().children("h3").html("Corrección");
+		$("#formLabel").parent().children("p").html("Ingresa el número de control correcto para ajustar la base de datos");
+		$("#modalLabel").modal("open");
+		action = 4;
+		$("#formLabel").find("input[name='nuevoLabel']").val("")
+	}
+	else if (action == 4){
+		action = 1;
+		accionCancel();
+	}
+}
+
+// Funcion para volver a comenzar
+function retake(){
+	$("#asdf").empty();
+	$("#video").addClass("blurOut");
+	$("#video").removeClass("blurIn");
+	
+	if(step == 0){
+		// Borrar el contenido del resultado y las capturas de muestra
+		$("#samples").empty();
+
+		// Reiniciar el contador y los datos de formulario 
+		capturas = 0;
+		formData = new FormData();
+
+		// Reiniciar el ciclo
+		loopCapture = loopCapture = setInterval(captura,timeOut);
+	}
+	else{
+		M.toast({html:"Esperando respuesta del servidor",displayLength:2000});
+	}
+}
+
+
+function captura(){
+	// Esto solo se va a hacer 5 veces y mientras el booleano 'streaming' este en True, que se activa cuando la camara comienza a dar señal
+	if(capturas < limite && streaming){		
+		// Se crea un canvas temporal, para ahi replicar un cuadro del vidio en vivo
+		var capturaTemp = document.createElement('canvas');
+		
+		// Se ajusta el tamaño
+		capturaTemp.width = video.offsetWidth; 
+		capturaTemp.height = video.offsetHeight; 
+		
+		//Se dibuja en el contexto 2d por que es una imagen plana
+		var ctxTemp = capturaTemp.getContext('2d');
+		//Parametros : origen, x inicial, y inicial, x final, y final.
+		ctxTemp.drawImage(video,0,0,video.offsetWidth,video.offsetHeight);
+		
+		// $("#asdf").append(capturaTemp);
+
+		// Se crea el blob, una codificacion de una imagen en un string.
+		var blob = dataURItoBlob(capturaTemp.toDataURL("image/png"))
+	 	
+	 	//Incrementar el contador de capturas creadas
+	 	capturas++;
+
+	 	//Agregar la imagen codificada en el formulario que se va a mandar
+	 	formData.append('sample'+capturas,blob,'sample'+capturas+".png");
+
+	 	// Mostrar en el navegador la captura, por propositos de debug
+	 	// $("#samples")[0].appendChild(capturaTemp)
+
+	 	//Mas debug, tamaños de la imagen
+	 	console.log(capturas+": ("+capturaTemp.width+"x"+capturaTemp.height+")"+"\n"+blob.size/1000000+" MB"+"---"+blob.size/1000+" kB");
+
+	 	//Cuando se completan las capturas necesarias, se detiene el iterador y se envian los datos al formulario
+	 	if(capturas == limite){
+	 		clearInterval(loopCapture);
+			sendServer();
+		}
+	}
+}
+
+// Funcion magica que por supuesto proviene de StackOverflow
+function dataURItoBlob(dataURI) {
+    // convert base64/URLEncoded data component to raw binary data held in a string
+    var byteString;
+    if (dataURI.split(',')[0].indexOf('base64') >= 0)
+        byteString = atob(dataURI.split(',')[1]);
+    else
+        byteString = unescape(dataURI.split(',')[1]);
+
+    // separate out the mime component
+    var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+
+    // write the bytes of the string to a typed array
+    var ia = new Uint8Array(byteString.length);
+    for (var i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+    }
+
+    return new Blob([ia], {type:mimeString});
+}
+
+// Esta funcion envia las imagenes al formulario y espera la respuesta para mostrarla
+function sendServer(){
+	// Si esto funciona se va a ver bien keprecioso
+	$("#video").removeClass("blurOut");
+	$("#video").addClass("blurIn");
+	$("#loadingGIF").fadeIn(100);
+
+	// Cambiar el icono del boton
+	step = 1;
+	$("#btnRetake").children("i").html("hourglass_empty");
+	// Se establece un tiempo 1 para determinar el tiempo de respuesta
+	var time1 = new Date().getTime();
+
+
+	//Token que genera Django para poder recibir el form
+	formData.append("csrfmiddlewaretoken",$("#form").children("input[name='csrfmiddlewaretoken']").val());
+		
+	//Peticion asincrona
+	$.ajax({
+		url:window.location.href+"upload",	// A la direccion que estamos conectados + /upload
+		type:"POST",						// Formulario tipo POST, si se pone GET en Django no se va a recibir
+		data:formData, 						// Datos que se van a enviar
+		processData: false,  // tell jQuery not to process the data
+ 		contentType: false   // tell jQuery not to set contentType
+	}).done(function(data){
+		// Calculo del tiempo de respuesta
+		var time2 = new Date().getTime(),
+			tiempo = (time2- time1); 	//en ms
+		console.log("TIME : "+tiempo+" ms");
+		
+		//Regresar el boton a su estado
+		step = 0;
+		$("#btnRetake").children("i").html("autorenew");
+
+		//Colocar en pantalla el resultado
+		displayResults(data);
+	});
+}
+
+function displayResults(respuesta){
+	data = respuesta.data;
+
+	console.log(respuesta);
+
+	sessionStorage.setItem('id',respuesta.id);
+	
+
+	$("#resultado").empty();
+	$(".btnCancel").show();
+
+	if(data=="SIN ROSTROS"){
+		action = 3;
+		$("#resultado").parent().children("h3").html("Error");
+		$("#resultado").append("<h4 class='deep-orange-text'>No se han encontrado rostros</h4>");
+		$("#resultado").append("<p>Asegurate que el rostro está descubierto y de que sólo una persona sea visible en cámara.</p>");
+		$(".btnCancel").hide();
+	}
+	else if (data == "DEMASIADOS ROSTROS"){
+		action = 3;
+		$("#resultado").parent().children("h3").html("Error");
+		$("#resultado").append("<h4 class='deep-orange-text'>Hay demasiadas personas en cámara</h4>");
+		$("#resultado").append("<p>Asegurate que el rostro está descubierto y de que sólo una persona sea visible en cámara.</p>");
+		$(".btnCancel").hide();
+	}
+	else if(data == "NO MATCH"){
+		action = 1;
+		$("#resultado").parent().children("h3").html("Error");
+		$("#resultado").append("<h4 class='deep-orange-text'>No reconocido</h4>");
+		$("#resultado").append("<p>No se han encontrado coincidencias en la base de datos. ¿Agregar rostro?</p>");
+	}
+	else if(data == "ERROR"){
+		action = 0;
+		$("#resultado").parent().children("h3").html("Error");
+		$("#resultado").append("<h4 class='deep-orange-text'>Internal Server Error</h4>");
+		$("#resultado").append("<p>Ha ocurrido un error en el servidor, vuelve a intentarlo</p>");
+	}
+	else{
+		sessionStorage.setItem('label',respuesta.data);
+		action = 2;
+		$("#resultado").parent().children("h3").html("Resultado");
+		$("#resultado").append("<h4 class='deep-orange-text'>"+respuesta.data+"</h4>");
+		$("#resultado").append("<p>¿Es correcto?</p>");
+	}
+	$("#confirmacion").modal("open");
+}
+
+function preventEnter(){
+	if(window.event && window.event.keyCode == 13){
+		$("#modalLabel").modal("close");
+		accionAgree();
+		window.event.preventDefault();
+	}
+	return false;
+}
+
+</script>
+
+<style>
+	#form{
+		display:none;
+	}
+	html,body{
+		background-color: #fff; 
+		background-image: 
+		linear-gradient(90deg, transparent 79px, #abced4 79px, #abced4 81px, transparent 81px),
+		linear-gradient(#eee .1em, transparent .1em);
+		background-size: 100% 1.2em;
+	}
+	.modal{
+		width: 550px;
+		height: 350px !important;
+	}	
+	.blurIn{
+		-webkit-filter: blur(5px);
+		-moz-filter: blur(5px);
+        -ms-filter: blur(5px);
+        -o-filter: blur(5px);
+        filter: blur(5px);
+
+		-webkit-transition: all 0.3s linear;
+       	-moz-transition: all 0.3s linear;
+       	-ms-transition: all 0.3s linear;
+        -o-transition: all 0.3s linear;
+        transition: all 0.3s linear;
+	}
+
+	.blurOut{
+		-webkit-filter: none;
+		-moz-filter: none;
+        -ms-filter: none;
+        -o-filter: none;
+        filter: none;
+
+		-webkit-transition: all 0.3s linear;
+       	-moz-transition: all 0.3s linear;
+       	-ms-transition: all 0.3s linear;
+        -o-transition: all 0.3s linear;
+        transition: all 0.3s linear;
+	}
+
+	#video{
+		position: relative;
+	}
+	#loadingGIF{
+		display: none;
+		position: absolute;
+		top: 50%;
+		transform: translateY(-50%);
+		margin: 0 auto;
+		width: 200px;
+		height: auto;
+	}
+</style>
+
+<body>
+	<form action="/upload" id="form"  enctype="multipart/form-data">
+		{% csrf_token %}
+	</form>
+	<div class="row center-align">
+		<div class="col xl3 l2 m12 s12"></div>
+		<div class="col  xl6 l8 m12 s12 center-align">
+			<div class="card blue-grey darken-1">
+				<div class="card-image">
+					<video id="video" width="100%" height="auto" autoplay muted></video>
+					<img id = "loadingGIF" src="/media/eclipse.svg">
+       				<a id="btnRetake" class="btn-large btn-floating halfway-fab teal lighten-2 fluid-text" onclick="retake()"><i class="material-icons">autorenew</i></a>
+				</div>
+				<div class="card-content blue-grey darken-1 white-text">
+					<p class="card-title">Reconocimiento Facial ITM</p>
+		         	<p class="">Recuerda que sólo una persona debe aparecer en las capturas, de lo contrario no se detectará.</p><br>       	
+		        </div>
+			</div>
+		</div>
+	</div>
+
+	<div id="asdf">
+		
+	</div>
+
+	<div class="modal modal-fixed-footer" id="confirmacion">
+		<div class="modal-content">
+			<h3>Resultado</h3>
+			<div id="resultado">
+				
+			</div>
+		</div>
+		<div class="modal-footer">
+			<button class="modal-close waves-effect waves-light btn red darken-2 white-text btnCancel">
+				<i class="material-icons">close</i>
+			</button>
+			<button class="modal-close waves-effect waves-light btn teal lighten-2 btnAgree">
+				<i class="material-icons">done</i>
+			</button>
+		</div> 
+	</div>
+
+	
+	<div class="modal modal-fixed-footer" id="modalLabel">
+		<div class="modal-content">
+			<h3>Nuevo</h3>
+			<p></p>
+			<form action="" id="formLabel">
+				<div class="row">
+					<div class="input-field col s12">
+						<input type="number" name="nuevoLabel" onkeyup="preventEnter()"> 
+						<label for="nuevoLabel">Numero de Control</label>	
+					</div>
+				</div>
+			</form>
+		</div>
+		<div class="modal-footer">
+			<button class="modal-close waves-effect waves-light btn red darken-2 white-text btnCancel">
+				<i class="material-icons">close</i>
+			</button>
+			<button class="modal-close waves-effect waves-light btn teal lighten-2 btnAgree">
+				<i class="material-icons">done</i>
+			</button>
+		</div> 
+	</div>
+
+</body>
+</html>
