@@ -42,7 +42,7 @@ Numpy 1.13
 Django-cleanup
 
 Control de Versiones
-GitLab: https://git.itmorelia.edu.mx/JGarciaDD/ServicioSocial
+GitLab: https://github.com/ArkhamBat26/ServicioSocialITM
 
 Autores
 Luis David Cruz Pérez..............luis-david1996@hotmail.com
